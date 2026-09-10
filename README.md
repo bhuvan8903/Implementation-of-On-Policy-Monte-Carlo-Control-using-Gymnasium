@@ -25,17 +25,40 @@ The objective of this experiment is to:
 
 ```bash
 pip install gymnasium numpy matplotlib
-```
+````
 
 ---
 
 ## Environment Description
 
+The **FrozenLake-v1** environment is a grid-world environment provided by Gymnasium.
 
+The environment contains four types of tiles:
 
+* **S** → Starting state
+* **F** → Frozen surface
+* **H** → Hole
+* **G** → Goal
 
+The agent starts from the starting state and must reach the goal while avoiding the holes.
 
+For this experiment, a deterministic `4 × 4` FrozenLake environment is used with `is_slippery=False`.
 
+The environment contains:
+
+* **16 states**
+* **4 possible actions**
+
+The action mapping is:
+
+| Action | Meaning |
+| ------ | ------- |
+| 0      | Left    |
+| 1      | Down    |
+| 2      | Right   |
+| 3      | Up      |
+
+---
 
 ## Theory
 
@@ -65,14 +88,14 @@ $$
 
 Where:
 
-| Symbol | Meaning |
-|---|---|
-| $s$ | Current state |
-| $a$ | Action taken in state $s$ |
-| $G_t$ | Return from time step $t$ |
-| $Q(s,a)$ | Action-value estimate |
-| $\alpha$ | Learning rate |
-| $\gamma$ | Discount factor |
+| Symbol   | Meaning                   |
+| -------- | ------------------------- |
+| $s$      | Current state             |
+| $a$      | Action taken in state $s$ |
+| $G_t$    | Return from time step $t$ |
+| $Q(s,a)$ | Action-value estimate     |
+| $\alpha$ | Learning rate             |
+| $\gamma$ | Discount factor           |
 
 ---
 
@@ -82,7 +105,7 @@ Monte Carlo Control uses epsilon-greedy action selection.
 
 With probability $\epsilon$, the agent explores by selecting a random action.
 
-With probability $1 - \epsilon$, the agent exploits by selecting the action with the highest Q-value.
+With probability $1-\epsilon$, the agent exploits by selecting the action with the highest Q-value.
 
 The greedy action is selected as:
 
@@ -100,17 +123,255 @@ $$
 
 ## Algorithm
 
+1. Import the required Gymnasium, NumPy, and Matplotlib libraries.
+2. Create the `FrozenLake-v1` environment.
+3. Obtain the number of states and number of actions.
+4. Initialize the Q-table with zeros.
+5. Set the hyperparameters such as number of episodes, learning rate, discount factor, and epsilon values.
+6. Use an epsilon-greedy policy to select actions.
+7. Generate a complete episode until the environment reaches a terminal state.
+8. Store the state, action, and reward for every step.
+9. Calculate the return $G_t$ by processing the episode backwards.
+10. Update the Q-value using the Monte Carlo update rule.
+11. Use first-visit Monte Carlo by updating each state-action pair only once per episode.
+12. Decrease epsilon after every episode while maintaining a minimum exploration value.
+13. Repeat the process for all training episodes.
+14. Extract the greedy policy using the maximum Q-value for every state.
+15. Calculate the estimated state-value function.
+16. Display the final Q-table, state-value function, learned policy, and average reward.
+17. Plot the learning curve.
 
+---
 
 ## Python Program
 
--------------------------------------------------
+---
+
 #### Monte Carlo Control
 
-
 ```python
-# Write your code here
+import gymnasium as gym
+import numpy as np
+import matplotlib.pyplot as plt
 
+# -------------------------------------------------
+# Create Environment
+# -------------------------------------------------
+
+env = gym.make("FrozenLake-v1", is_slippery=False, map_name="4x4")
+
+n_states = env.observation_space.n
+n_actions = env.action_space.n
+
+print("Number of states:", n_states)
+print("Number of actions:", n_actions)
+
+
+# -------------------------------------------------
+# Hyperparameters
+# -------------------------------------------------
+
+num_episodes = 20000
+
+gamma = 0.99
+alpha = 0.1
+
+epsilon_start = 1.0
+epsilon_min = 0.05
+epsilon_decay = 0.9995
+
+max_steps_per_episode = 100
+
+
+# -------------------------------------------------
+# Initialize Q-table
+# -------------------------------------------------
+
+Q = np.zeros((n_states, n_actions))
+
+episode_rewards = []
+
+
+# -------------------------------------------------
+# Epsilon-Greedy Action Selection
+# -------------------------------------------------
+
+
+def epsilon_greedy_action(state, epsilon):
+    """
+    Select an action using an epsilon-greedy policy.
+    """
+
+    # Exploration
+    if np.random.random() < epsilon:
+        return env.action_space.sample()
+
+    # Exploitation
+    # Select the action with the maximum Q-value.
+    # Random tie-breaking is used when multiple
+    # actions have the same Q-value.
+    best_actions = np.flatnonzero(Q[state] == np.max(Q[state]))
+
+    return np.random.choice(best_actions)
+
+
+# -------------------------------------------------
+# Generate One Complete Episode
+# -------------------------------------------------
+
+
+def generate_episode(epsilon):
+    """
+    Generates one episode using the current
+    epsilon-greedy policy.
+
+    Returns a list of:
+    (state, action, reward)
+    """
+
+    episode = []
+
+    state, info = env.reset()
+
+    for _ in range(max_steps_per_episode):
+
+        action = epsilon_greedy_action(state, epsilon)
+
+        next_state, reward, terminated, truncated, info = env.step(action)
+
+        episode.append((state, action, reward))
+
+        state = next_state
+
+        if terminated or truncated:
+            break
+
+    return episode
+
+
+# -------------------------------------------------
+# Monte Carlo Control
+# -------------------------------------------------
+
+epsilon = epsilon_start
+
+for episode_num in range(num_episodes):
+
+    # Generate a complete episode
+    episode = generate_episode(epsilon)
+
+    # Store total reward obtained in the episode
+    episode_rewards.append(sum(reward for _, _, reward in episode))
+
+    # Initialize return
+    G = 0.0
+
+    # Keep track of visited state-action pairs
+    visited = set()
+
+    # Process the episode backwards
+    for t in range(len(episode) - 1, -1, -1):
+
+        state, action, reward = episode[t]
+
+        # Calculate discounted return
+        G = gamma * G + reward
+
+        # First-visit Monte Carlo
+        if (state, action) not in visited:
+
+            visited.add((state, action))
+
+            # Incremental Monte Carlo Q-value update
+            Q[state, action] += alpha * (G - Q[state, action])
+
+    # Decay epsilon
+    epsilon = max(epsilon_min, epsilon * epsilon_decay)
+
+    # Display training progress
+    if (episode_num + 1) % 2000 == 0:
+
+        avg_reward = np.mean(episode_rewards[-1000:])
+
+        print(
+            f"Episode {episode_num + 1:5d} | "
+            f"epsilon = {epsilon:.3f} | "
+            f"last-1000 average reward = {avg_reward:.3f}"
+        )
+
+
+# -------------------------------------------------
+# Extract Greedy Policy
+# -------------------------------------------------
+
+optimal_policy = np.argmax(Q, axis=1)
+
+state_values = np.max(Q, axis=1)
+
+
+# -------------------------------------------------
+# Display Results
+# -------------------------------------------------
+
+
+def print_policy(policy):
+
+    action_symbols = {0: "L", 1: "D", 2: "R", 3: "U"}
+
+    policy_grid = np.array([action_symbols[action] for action in policy]).reshape(4, 4)
+
+    print("Name: Bhuvaneshwaran H")
+
+    print("Register Number: 212223240018")
+
+    print("\nLearned Policy:")
+
+    print(policy_grid)
+
+
+def print_value_function(values):
+
+    print("\nEstimated State-Value Function:")
+
+    print(np.round(values.reshape(4, 4), 3))
+
+
+print("\nFinal Q-table:")
+
+print(np.round(Q, 3))
+
+print_value_function(state_values)
+
+print_policy(optimal_policy)
+
+success_rate = np.mean(episode_rewards[-1000:])
+
+print("\nAverage reward over last 1000 episodes:", success_rate)
+
+
+# -------------------------------------------------
+# Plot Learning Curve
+# -------------------------------------------------
+
+window = 500
+
+moving_average = np.convolve(episode_rewards, np.ones(window) / window, mode="valid")
+
+plt.figure(figsize=(8, 5))
+
+plt.plot(moving_average)
+
+plt.xlabel("Episode")
+
+plt.ylabel("Average Reward")
+
+plt.title("Monte Carlo Control Learning Curve")
+
+plt.grid(True)
+
+plt.show()
+
+env.close()
 
 
 ```
@@ -119,49 +380,80 @@ $$
 
 ## Output
 
-```text
-Final Q-table:
+### Episodes=20000:
+<img width="616" height="242" alt="image" src="https://github.com/user-attachments/assets/d914e45a-8bf9-4a6b-9f62-01dba63e3909" />
+
+### Final Q-table-1:
+
+<img width="357" height="341" alt="image" src="https://github.com/user-attachments/assets/955a606f-bf8a-4879-8e80-edda7ee5e6af" />
 
 
+### Estimated State-Value Function
 
-Estimated State-Value Function:
-
-
-
+<img width="358" height="166" alt="image" src="https://github.com/user-attachments/assets/de153509-3f44-4a0b-a84d-ed3571adf159" />
 
 
+### Learned Policy
+
+<img width="517" height="147" alt="image" src="https://github.com/user-attachments/assets/6ab447be-1533-4169-ae8d-2d0023b82b93" />
 
 
-Learned Policy:
+### Average Reward
+
+<img width="468" height="37" alt="image" src="https://github.com/user-attachments/assets/be8b1c8e-2909-4216-b9da-cb7f293ece2f" />
 
 
+### Plot Learning Curve:
 
+<img width="699" height="468" alt="image" src="https://github.com/user-attachments/assets/bd7bc6e7-a557-4f89-95b6-6304c1c24b0a" />
 
+### Episodes=5000:
+<img width="637" height="90" alt="image" src="https://github.com/user-attachments/assets/615001f8-b1f1-4a81-a540-ae145b8c3d0f" />
 
-Average reward over last 1000 episodes: 
-```
+### Final Q-table-2:
+
+<img width="286" height="333" alt="image" src="https://github.com/user-attachments/assets/e9fedb07-44fe-46a5-98c6-97f108360f60" />
+
+### Estimated State-Value Function
+
+<img width="342" height="148" alt="image" src="https://github.com/user-attachments/assets/86c89013-a4ba-4a1f-80c8-5870e1730e80" />
+
+### Learned Policy
+
+<img width="247" height="112" alt="image" src="https://github.com/user-attachments/assets/176f995b-243e-47df-a857-861d554b4798" />
+
+### Average Reward
+
+<img width="513" height="22" alt="image" src="https://github.com/user-attachments/assets/0248ce13-e518-4e16-89e4-ae2ded05a4aa" />
+
+### Plot Learning Curve:
+
+<img width="691" height="468" alt="image" src="https://github.com/user-attachments/assets/ce377528-d650-4fac-9cb0-9eaf0d0acdef" />
 
 
 ---
 
 ## Result
-```text
 
+The On-Policy Monte Carlo Control algorithm was successfully implemented using Gymnasium's FrozenLake-v1 environment.
+The agent learned an improved policy using Monte Carlo returns and an epsilon-greedy strategy.
 
-
-```
 ---
 
 ## Inference
-```text
 
+The agent initially performs more exploration because the epsilon value starts at `1.0`. As the number of training episodes increases, epsilon decreases toward the minimum value of `0.05`.
 
+The Monte Carlo algorithm calculates the return from complete episodes and uses these returns to update the Q-values.
 
-```
+The learned Q-table represents the estimated value of taking each action in every state. The state-value function is obtained by selecting the maximum Q-value for each state.
 
+The epsilon-greedy policy allows the agent to explore different actions initially and gradually exploit the actions that provide higher estimated returns.
 
-
-
+The learning curve shows the change in the average reward as the number of training episodes increases.
 
 ---
+---
 
+```
+```
